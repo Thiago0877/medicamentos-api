@@ -1,0 +1,147 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  VENDEDOR
+  COMPRADOR
+  CONSULTOR
+}
+
+enum OrderStatus {
+  INICIO
+  VALIDACION
+  CONFIRMACION
+  LLEGADA
+}
+
+enum TransitionAction {
+  VALIDAR
+  CONFIRMAR
+  LLEGADA
+  CANCELAR
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      UserRole
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relaciones
+  productsCreated Product[] @relation("ProductCreator")
+  ordersAsBuyer   Order[]   @relation("OrderBuyer")
+  ordersAsSeller  Order[]   @relation("OrderSeller")
+  transitions     OrderTransition[]
+
+  @@map("users")
+}
+
+model Product {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  category    String
+  price       Float
+  stock       Int      @default(0)
+  isActive    Boolean  @default(true)
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  version     Int      @default(0) // Para ETag
+
+  createdById String
+  createdBy   User   @relation("ProductCreator", fields: [createdById], references: [id])
+
+  // Relaciones
+  orderItems OrderItem[]
+
+  @@index([category])
+  @@index([isActive])
+  @@index([price])
+  @@map("products")
+}
+
+model Order {
+  id              String      @id @default(uuid())
+  status          OrderStatus @default(INICIO)
+  total           Float
+  shippingAddress String
+  notes           String?
+  version         Int         @default(0) // Para ETag
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  buyerId  String
+  buyer    User   @relation("OrderBuyer", fields: [buyerId], references: [id])
+  
+  sellerId String?
+  seller   User?   @relation("OrderSeller", fields: [sellerId], references: [id])
+
+  // Relaciones
+  items       OrderItem[]
+  transitions OrderTransition[]
+
+  @@index([status])
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String   @id @default(uuid())
+  quantity  Int
+  unitPrice Float
+  subtotal  Float
+  createdAt DateTime @default(now())
+
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  @@map("order_items")
+}
+
+model OrderTransition {
+  id        String           @id @default(uuid())
+  action    TransitionAction
+  fromStatus OrderStatus?
+  toStatus   OrderStatus
+  notes     String?
+  createdAt DateTime         @default(now())
+
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  userId  String
+  user    User   @relation(fields: [userId], references: [id])
+
+  @@index([orderId])
+  @@map("order_transitions")
+}
+
+model IdempotencyKey {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  response  Json
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}
